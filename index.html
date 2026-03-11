@@ -3,51 +3,114 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Upload Excel/CSV ke Leaflet</title>
+  <title>Leaflet Uploader Data X Y Z / UTM</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; font-family: Arial, sans-serif; }
-    #app { display: grid; grid-template-columns: 350px 1fr; height: 100%; }
+    html, body { margin: 0; height: 100%; font-family: Arial, Helvetica, sans-serif; }
+    #app {
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      height: 100%;
+    }
     #sidebar {
-      padding: 16px;
-      border-right: 1px solid #ddd;
       background: #f8fafc;
+      border-right: 1px solid #cbd5e1;
       overflow-y: auto;
+      padding: 16px;
     }
     #map { width: 100%; height: 100%; }
-    h1 { font-size: 20px; margin: 0 0 12px; }
-    .card {
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 12px;
-      padding: 14px;
-      margin-bottom: 14px;
+    h1 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      color: #0f172a;
     }
-    label { display: block; font-size: 14px; margin-bottom: 6px; font-weight: 600; }
-    input[type="file"], input[type="number"], button {
-      width: 100%;
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid #ccc;
+    p.lead {
+      margin: 0 0 14px;
+      color: #475569;
+      line-height: 1.5;
       font-size: 14px;
     }
+    .card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      color: #0f172a;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #334155;
+    }
+    input[type="file"],
+    input[type="number"],
+    select,
+    button,
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      font-size: 14px;
+      background: #fff;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
     button {
-      background: #2563eb;
-      color: #fff;
       border: none;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 700;
+      background: #2563eb;
+      color: #fff;
     }
     button.secondary {
       background: #64748b;
     }
-    .row { display: flex; gap: 10px; }
-    .hint, #status { font-size: 13px; line-height: 1.5; color: #475569; }
+    button.success {
+      background: #0f766e;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .row-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+    .hint {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.5;
+      margin-top: 8px;
+    }
+    .status {
+      font-size: 13px;
+      line-height: 1.55;
+      color: #334155;
+      white-space: pre-wrap;
+    }
+    .ok { color: #166534; }
+    .err { color: #b91c1c; }
     .stats {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -59,62 +122,203 @@
       border-radius: 10px;
       padding: 10px;
     }
-    .stat strong { display: block; font-size: 18px; margin-top: 4px; color: #0f172a; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { border-bottom: 1px solid #e2e8f0; padding: 6px; text-align: left; }
-    th { background: #f1f5f9; position: sticky; top: 0; }
+    .stat span {
+      display: block;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .stat strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 18px;
+      color: #0f172a;
+    }
     .table-wrap {
-      max-height: 200px;
+      max-height: 220px;
       overflow: auto;
       border: 1px solid #e2e8f0;
       border-radius: 10px;
     }
-    @media (max-width: 900px) {
-      #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-      #sidebar { border-right: none; border-bottom: 1px solid #ddd; max-height: 42vh; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 7px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #f1f5f9;
+      color: #0f172a;
+      z-index: 1;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      font-size: 11px;
+      font-weight: 700;
+      color: #334155;
+      margin-right: 4px;
+      margin-bottom: 4px;
+    }
+    .legend-box {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #475569;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 6px 8px;
+      border-radius: 999px;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      border: 1px solid rgba(0,0,0,0.15);
+    }
+    @media (max-width: 980px) {
+      #app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+      #sidebar {
+        border-right: none;
+        border-bottom: 1px solid #cbd5e1;
+        max-height: 48vh;
+      }
     }
   </style>
 </head>
 <body>
   <div id="app">
-    <div id="sidebar">
-      <h1>Leaflet Upload Titik</h1>
+    <aside id="sidebar">
+      <h1>Upload Data X Y Z ke Leaflet</h1>
+      <p class="lead">
+        Versi ini membaca Excel, CSV, atau TXT yang berisi kolom <b>X</b>, <b>Y</b>, dan <b>Z</b>. Data dapat memakai koma desimal seperti <b>300356,417</b>. Untuk data UTM, sistem akan mengonversi ke latitude dan longitude agar bisa ditampilkan di peta satelit.
+      </p>
 
       <div class="card">
-        <label>Upload Excel / CSV</label>
+        <h2>1. Upload file</h2>
+        <label for="fileInput">Pilih Excel / CSV / TXT</label>
         <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.txt" />
-        <p class="hint">
-          Sistem akan mencoba membaca kolom: <b>lat/latitude/y</b> dan <b>lon/longitude/x</b>.
-        </p>
+        <div class="hint">
+          Sistem mencoba membaca sheet pertama dan mendeteksi kolom otomatis seperti: <b>No</b>, <b>X</b>, <b>Y</b>, <b>Z</b>, <b>Z. Elepsoid</b>, <b>Elevation</b>, <b>Depth</b>.
+        </div>
       </div>
 
       <div class="card">
-        <label>Ukuran marker (radius)</label>
-        <input type="number" id="markerRadius" value="6" min="2" max="20" />
-        <div class="row" style="margin-top:10px;">
+        <h2>2. Tipe koordinat</h2>
+        <label for="coordMode">Mode koordinat input</label>
+        <select id="coordMode">
+          <option value="utm" selected>Projected UTM (X = Easting, Y = Northing)</option>
+          <option value="lonlat">Longitude/Latitude langsung</option>
+        </select>
+
+        <div id="utmOptions" style="margin-top:10px;">
+          <div class="row">
+            <div>
+              <label for="utmZone">UTM Zone</label>
+              <input type="number" id="utmZone" value="49" min="1" max="60" />
+            </div>
+            <div>
+              <label for="utmHemisphere">Hemisphere</label>
+              <select id="utmHemisphere">
+                <option value="south" selected>South</option>
+                <option value="north">North</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <label for="datum">Datum / Ellipsoid</label>
+            <select id="datum">
+              <option value="WGS84" selected>WGS84</option>
+            </select>
+          </div>
+          <div class="hint">
+            Untuk contoh Indonesia seperti yang Anda kirim, sangat mungkin data adalah UTM di belahan selatan. Jika titik belum tepat, biasanya yang perlu dicek adalah <b>zone UTM</b>.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>3. Pengaturan tampilan</h2>
+        <div class="row-3">
+          <div>
+            <label for="markerRadius">Radius marker</label>
+            <input type="number" id="markerRadius" value="6" min="2" max="20" />
+          </div>
+          <div>
+            <label for="strokeWidth">Outline</label>
+            <input type="number" id="strokeWidth" value="1" min="0" max="10" />
+          </div>
+          <div>
+            <label for="opacity">Opacity</label>
+            <input type="number" id="opacity" value="0.85" min="0.1" max="1" step="0.05" />
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <label for="colorMode">Warna marker</label>
+          <select id="colorMode">
+            <option value="single">Satu warna</option>
+            <option value="zvalue" selected>Berdasarkan nilai Z</option>
+          </select>
+        </div>
+        <div class="row" style="margin-top:12px;">
           <button id="btnRender">Tampilkan di Peta</button>
-          <button id="btnClear" class="secondary" type="button">Hapus</button>
+          <button id="btnClear" class="secondary" type="button">Hapus Layer</button>
         </div>
       </div>
 
       <div class="card">
-        <label>Contoh format data</label>
-        <div class="hint" style="white-space: pre-wrap; background:#f8fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">longitude,latitude,nama,depth
-112.7501,-7.2574,Titik 1,12.5
-112.7503,-7.2578,Titik 2,18.2
-112.7507,-7.2581,Titik 3,25.0</div>
+        <h2>4. Contoh format data</h2>
+        <textarea readonly>No,X,Y,Z. Elepsoid
+1,300356.417,9031973.976,43.696
+2,300356.804,9031973.510,43.696
+3,300357.159,9031973.019,43.696</textarea>
+        <div class="hint">
+          Jika file Anda memakai koma sebagai desimal, seperti <b>300356,417</b>, sistem akan mencoba mengubahnya menjadi <b>300356.417</b>. Untuk CSV dengan delimiter koma dan desimal koma secara bersamaan, format paling aman adalah <b>Excel .xlsx</b> atau <b>TXT/CSV dengan pemisah titik koma</b>.
+        </div>
       </div>
 
       <div class="card">
-        <label>Statistik</label>
+        <h2>5. Statistik</h2>
         <div class="stats">
-          <div class="stat"><span>Jumlah titik</span><strong id="statCount">0</strong></div>
-          <div class="stat"><span>Kolom koordinat</span><strong id="statFields">-</strong></div>
+          <div class="stat"><span>Jumlah baris</span><strong id="statRows">0</strong></div>
+          <div class="stat"><span>Titik valid</span><strong id="statValid">0</strong></div>
+          <div class="stat"><span>Kolom terbaca</span><strong id="statFields">-</strong></div>
+          <div class="stat"><span>Z minimum</span><strong id="statZmin">-</strong></div>
+          <div class="stat"><span>Z maksimum</span><strong id="statZmax">-</strong></div>
         </div>
       </div>
 
       <div class="card">
-        <label>Preview data</label>
+        <h2>6. Legenda</h2>
+        <div class="legend-box" id="legendBox">
+          <div class="legend-item"><span class="legend-dot" style="background:#0ea5e9"></span> nilai Z rendah</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span> menengah rendah</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#facc15"></span> menengah</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span> menengah tinggi</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> nilai Z tinggi</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>7. Preview data</h2>
         <div class="table-wrap">
           <table>
             <thead><tr id="previewHead"></tr></thead>
@@ -124,52 +328,100 @@
       </div>
 
       <div class="card">
-        <label>Status</label>
-        <div id="status">Menunggu file diunggah.</div>
+        <h2>8. Status</h2>
+        <div id="status" class="status">Menunggu file diunggah.</div>
       </div>
-    </div>
+    </aside>
 
-    <div id="map"></div>
+    <main id="map"></main>
   </div>
 
   <script>
-    const map = L.map('map').setView([-2.5, 118], 5);
+    const map = L.map('map', { preferCanvas: true }).setView([-2.5, 118.0], 5);
 
-    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: '&copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    const esriSatellite = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        attribution: '&copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+        maxZoom: 19
+      }
+    ).addTo(map);
+
+    const esriLabels = L.tileLayer(
+      'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      {
+        attribution: 'Labels &copy; Esri',
+        maxZoom: 19
+      }
+    ).addTo(map);
+
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19
-    }).addTo(map);
+    });
 
-    const labels = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-      attribution: 'Labels &copy; Esri',
-      maxZoom: 19
-    }).addTo(map);
-
-    const baseMaps = {
-      'Satellite': satellite
-    };
-
-    const overlayMaps = {
-      'Labels': labels
-    };
-
-    L.control.layers(baseMaps, overlayMaps).addTo(map);
+    L.control.layers(
+      {
+        'Satellite': esriSatellite,
+        'OpenStreetMap': osm
+      },
+      {
+        'Labels': esriLabels
+      }
+    ).addTo(map);
 
     let rawRows = [];
-    let pointLayer = L.layerGroup().addTo(map);
+    let plottedRows = [];
     let detectedFields = null;
+    let pointLayer = L.layerGroup().addTo(map);
 
     const fileInput = document.getElementById('fileInput');
     const btnRender = document.getElementById('btnRender');
     const btnClear = document.getElementById('btnClear');
     const statusEl = document.getElementById('status');
+    const coordModeEl = document.getElementById('coordMode');
+    const utmOptionsEl = document.getElementById('utmOptions');
 
-    function setStatus(msg) {
+    function setStatus(msg, type = '') {
+      statusEl.className = 'status ' + type;
       statusEl.textContent = msg;
     }
 
     function normalizeKey(key) {
-      return String(key || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+      return String(key || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+    }
+
+    function parseDecimal(value) {
+      if (value === null || value === undefined || value === '') return null;
+      if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+
+      let s = String(value).trim();
+      if (!s) return null;
+
+      s = s.replace(/\s+/g, '');
+
+      const hasComma = s.includes(',');
+      const hasDot = s.includes('.');
+
+      if (hasComma && hasDot) {
+        const lastComma = s.lastIndexOf(',');
+        const lastDot = s.lastIndexOf('.');
+
+        if (lastComma > lastDot) {
+          s = s.replace(/\./g, '');
+          s = s.replace(/,/g, '.');
+        } else {
+          s = s.replace(/,/g, '');
+        }
+      } else if (hasComma && !hasDot) {
+        s = s.replace(/,/g, '.');
+      }
+
+      const n = Number(s);
+      return Number.isFinite(n) ? n : null;
     }
 
     function detectFields(rows) {
@@ -177,41 +429,73 @@
       const keys = Object.keys(rows[0]);
       const normalized = keys.map(k => ({ raw: k, n: normalizeKey(k) }));
 
-      const findField = (candidates) => {
+      function findField(candidates) {
         for (const cand of candidates) {
-          const found = normalized.find(k => k.n === cand || k.n.includes(cand));
-          if (found) return found.raw;
+          const exact = normalized.find(k => k.n === cand);
+          if (exact) return exact.raw;
+        }
+        for (const cand of candidates) {
+          const partial = normalized.find(k => k.n.includes(cand));
+          if (partial) return partial.raw;
         }
         return null;
-      };
+      }
 
       return {
-        lonField: findField(['longitude', 'lon', 'x']),
-        latField: findField(['latitude', 'lat', 'y']),
-        nameField: findField(['nama', 'name', 'title', 'pointname'])
+        noField: findField(['no', 'nomor', 'id']),
+        xField: findField(['x', 'easting', 'east']),
+        yField: findField(['y', 'northing', 'north']),
+        zField: findField(['z', 'zelepsoid', 'zellipsoid', 'zelepsoid', 'elevation', 'depth', 'height', 'altitude', 'zellips', 'zellipsoid', 'zeleps'])
       };
-    }
-
-    function toNumber(val) {
-      if (val === null || val === undefined || val === '') return null;
-      const cleaned = String(val).trim().replace(/,/g, '.');
-      const num = Number(cleaned);
-      return Number.isFinite(num) ? num : null;
     }
 
     async function parseFile(file) {
       const ext = file.name.split('.').pop().toLowerCase();
+
       if (['xlsx', 'xls'].includes(ext)) {
         const data = await file.arrayBuffer();
-        const wb = XLSX.read(data, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        return XLSX.utils.sheet_to_json(ws, { defval: null });
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        return XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false });
       }
 
       const text = await file.text();
-      const wb = XLSX.read(text, { type: 'string' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      return XLSX.utils.sheet_to_json(ws, { defval: null });
+      return parseDelimitedText(text);
+    }
+
+    function parseDelimitedText(text) {
+      const lines = text.split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+      if (!lines.length) return [];
+
+      let delimiter = ',';
+      const first = lines[0];
+      const semicolons = (first.match(/;/g) || []).length;
+      const tabs = (first.match(/\t/g) || []).length;
+      const commas = (first.match(/,/g) || []).length;
+
+      if (tabs > semicolons && tabs > commas) delimiter = '\t';
+      else if (semicolons >= commas) delimiter = ';';
+      else delimiter = ',';
+
+      const splitLine = (line) => {
+        if (delimiter === '\t') return line.split('\t').map(v => v.trim());
+        return line.split(delimiter).map(v => v.trim());
+      };
+
+      const headers = splitLine(lines[0]);
+      const rows = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const parts = splitLine(lines[i]);
+        if (!parts.length) continue;
+        const row = {};
+        headers.forEach((header, idx) => {
+          row[header] = parts[idx] ?? null;
+        });
+        rows.push(row);
+      }
+
+      return rows;
     }
 
     function updatePreview(rows) {
@@ -219,16 +503,17 @@
       const body = document.getElementById('previewBody');
       head.innerHTML = '';
       body.innerHTML = '';
+
       if (!rows.length) return;
 
-      const cols = Object.keys(rows[0]).slice(0, 6);
+      const cols = Object.keys(rows[0]).slice(0, 8);
       cols.forEach(col => {
         const th = document.createElement('th');
         th.textContent = col;
         head.appendChild(th);
       });
 
-      rows.slice(0, 8).forEach(row => {
+      rows.slice(0, 10).forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(col => {
           const td = document.createElement('td');
@@ -239,88 +524,233 @@
       });
     }
 
-    function updateStats(rows, fields) {
-      document.getElementById('statCount').textContent = rows.length;
-      document.getElementById('statFields').textContent = (fields?.lonField && fields?.latField)
-        ? `${fields.lonField} / ${fields.latField}`
+    function updateStats(rows, validRows, fields) {
+      document.getElementById('statRows').textContent = rows.length;
+      document.getElementById('statValid').textContent = validRows.length;
+      document.getElementById('statFields').textContent = fields
+        ? [fields.noField, fields.xField, fields.yField, fields.zField].filter(Boolean).join(' | ') || '-'
         : '-';
+
+      const zVals = validRows.map(r => r.z).filter(v => v !== null && Number.isFinite(v));
+      document.getElementById('statZmin').textContent = zVals.length ? zVals.reduce((a, b) => Math.min(a, b)).toFixed(3) : '-';
+      document.getElementById('statZmax').textContent = zVals.length ? zVals.reduce((a, b) => Math.max(a, b)).toFixed(3) : '-';
     }
 
-    function clearPoints() {
-      pointLayer.clearLayers();
-      setStatus('Layer titik dihapus.');
+    function getUtmProjString(zone, hemisphere) {
+      const southFlag = hemisphere === 'south' ? ' +south' : '';
+      return `+proj=utm +zone=${zone}${southFlag} +datum=WGS84 +units=m +no_defs`;
     }
 
-    function renderPoints(rows, fields) {
-      if (!fields?.lonField || !fields?.latField) {
-        throw new Error('Kolom longitude/latitude tidak ditemukan.');
+    function transformCoordinate(x, y) {
+      const coordMode = document.getElementById('coordMode').value;
+
+      if (coordMode === 'lonlat') {
+        return { lon: x, lat: y };
       }
 
-      pointLayer.clearLayers();
-      const radius = Number(document.getElementById('markerRadius').value) || 6;
-      const bounds = [];
+      const zone = Number(document.getElementById('utmZone').value) || 49;
+      const hemisphere = document.getElementById('utmHemisphere').value;
+      const srcProj = getUtmProjString(zone, hemisphere);
+      const dstProj = proj4.WGS84;
+      const result = proj4(srcProj, dstProj, [x, y]);
 
-      let validCount = 0;
-      rows.forEach((row, index) => {
-        const lon = toNumber(row[fields.lonField]);
-        const lat = toNumber(row[fields.latField]);
-        if (lon === null || lat === null || lon < -180 || lon > 180 || lat < -90 || lat > 90) return;
+      return { lon: result[0], lat: result[1] };
+    }
 
-        validCount++;
-        bounds.push([lat, lon]);
+    function getColorByValue(value, min, max) {
+      if (value === null || !Number.isFinite(value) || min === null || max === null) return '#0ea5e9';
+      const range = (max - min) || 1;
+      const t = Math.max(0, Math.min(1, (value - min) / range));
 
-        const popupRows = Object.entries(row)
-          .map(([key, value]) => `<tr><th style="text-align:left; padding:4px; border:1px solid #ddd;">${key}</th><td style="padding:4px; border:1px solid #ddd;">${value ?? ''}</td></tr>`)
-          .join('');
+      if (t <= 0.2) return '#0ea5e9';
+      if (t <= 0.4) return '#22c55e';
+      if (t <= 0.6) return '#facc15';
+      if (t <= 0.8) return '#f97316';
+      return '#ef4444';
+    }
 
-        const title = fields.nameField && row[fields.nameField]
-          ? String(row[fields.nameField])
-          : `Titik ${index + 1}`;
+    function buildPopupTable(row, lon, lat) {
+      let html = '<div style="min-width:240px">';
+      html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+      html += `<tr><th style="text-align:left; border:1px solid #ddd; padding:5px;">Longitude</th><td style="border:1px solid #ddd; padding:5px;">${lon.toFixed(8)}</td></tr>`;
+      html += `<tr><th style="text-align:left; border:1px solid #ddd; padding:5px;">Latitude</th><td style="border:1px solid #ddd; padding:5px;">${lat.toFixed(8)}</td></tr>`;
+      Object.entries(row.original).forEach(([key, value]) => {
+        html += `<tr><th style="text-align:left; border:1px solid #ddd; padding:5px;">${key}</th><td style="border:1px solid #ddd; padding:5px;">${value ?? ''}</td></tr>`;
+      });
+      html += '</table></div>';
+      return html;
+    }
 
-        L.circleMarker([lat, lon], {
-          radius,
-          color: '#1d4ed8',
-          weight: 1,
-          fillColor: '#38bdf8',
-          fillOpacity: 0.85
-        })
-          .bindPopup(`<div style="min-width:220px;"><b>${title}</b><br><table style="border-collapse:collapse; width:100%; margin-top:8px;">${popupRows}</table></div>`)
-          .addTo(pointLayer);
+    function buildValidRows(rows, fields) {
+      if (!fields?.xField || !fields?.yField) {
+        throw new Error('Kolom X dan Y tidak terdeteksi. Pastikan file memiliki header X dan Y.');
+      }
+
+      const valid = [];
+      const coordMode = document.getElementById('coordMode').value;
+
+      rows.forEach((row, idx) => {
+        const x = parseDecimal(row[fields.xField]);
+        const y = parseDecimal(row[fields.yField]);
+        const z = fields.zField ? parseDecimal(row[fields.zField]) : null;
+        const noVal = fields.noField ? row[fields.noField] : (idx + 1);
+
+        if (x === null || y === null) return;
+
+        let transformed;
+        try {
+          transformed = transformCoordinate(x, y);
+        } catch (err) {
+          return;
+        }
+
+        if (!transformed) return;
+        const lon = transformed.lon;
+        const lat = transformed.lat;
+
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+        if (coordMode === 'lonlat') {
+          if (lon < -180 || lon > 180 || lat < -90 || lat > 90) return;
+        } else {
+          if (lon < -180 || lon > 180 || lat < -90 || lat > 90) return;
+        }
+
+        valid.push({
+          no: noVal,
+          x,
+          y,
+          z,
+          lon,
+          lat,
+          original: row
+        });
       });
 
-      if (!validCount) throw new Error('Tidak ada titik valid yang bisa ditampilkan.');
-      map.fitBounds(bounds, { padding: [30, 30] });
-      setStatus(`Berhasil menampilkan ${validCount} titik dari file upload.`);
+      return valid;
     }
+
+    function renderPoints(validRows) {
+      pointLayer.clearLayers();
+
+      if (!validRows.length) {
+        throw new Error('Tidak ada titik valid yang bisa ditampilkan. Periksa X, Y, dan parameter UTM.');
+      }
+
+      const radius = Number(document.getElementById('markerRadius').value) || 6;
+      const strokeWidth = Number(document.getElementById('strokeWidth').value) || 1;
+      const opacity = Number(document.getElementById('opacity').value) || 0.85;
+      const colorMode = document.getElementById('colorMode').value;
+
+      const zVals = validRows.map(r => r.z).filter(v => v !== null && Number.isFinite(v));
+      const zMin = zVals.length ? Math.min(...zVals) : null;
+      const zMax = zVals.length ? Math.max(...zVals) : null;
+
+      const bounds = [];
+
+      validRows.forEach((row, idx) => {
+        const color = colorMode === 'zvalue'
+          ? getColorByValue(row.z, zMin, zMax)
+          : '#0ea5e9';
+
+        const marker = L.circleMarker([row.lat, row.lon], {
+          radius,
+          color: '#0f172a',
+          weight: strokeWidth,
+          fillColor: color,
+          fillOpacity: opacity
+        });
+
+        marker.bindPopup(`
+          <div>
+            <div style="font-weight:700; margin-bottom:8px;">Titik ${row.no ?? (idx + 1)}</div>
+            ${buildPopupTable(row, row.lon, row.lat)}
+          </div>
+        `);
+
+        marker.addTo(pointLayer);
+        bounds.push([row.lat, row.lon]);
+      });
+
+      if (bounds.length) {
+        map.fitBounds(bounds, { padding: [30, 30] });
+      }
+    }
+
+    function clearLayer() {
+      pointLayer.clearLayers();
+      plottedRows = [];
+      updateStats(rawRows, [], detectedFields);
+      setStatus('Layer titik dihapus dari peta.');
+    }
+
+    coordModeEl.addEventListener('change', () => {
+      utmOptionsEl.style.display = coordModeEl.value === 'utm' ? 'block' : 'none';
+    });
 
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
+
       try {
         setStatus('Membaca file...');
         rawRows = await parseFile(file);
-        if (!rawRows.length) throw new Error('File tidak berisi data.');
+        if (!rawRows.length) {
+          throw new Error('File berhasil dibaca, tetapi tidak ada data baris.');
+        }
+
         detectedFields = detectFields(rawRows);
         updatePreview(rawRows);
-        updateStats(rawRows, detectedFields);
-        setStatus(`File ${file.name} berhasil dibaca. Klik "Tampilkan di Peta".`);
+        updateStats(rawRows, [], detectedFields);
+
+        const fieldMsg = detectedFields
+          ? `Deteksi kolom: ${[detectedFields.noField, detectedFields.xField, detectedFields.yField, detectedFields.zField].filter(Boolean).join(', ') || '-'}`
+          : 'Kolom belum terdeteksi.';
+
+        setStatus(`File ${file.name} berhasil dibaca.\n${fieldMsg}\nKlik "Tampilkan di Peta" untuk memproses koordinat.`, 'ok');
       } catch (err) {
         console.error(err);
-        setStatus(`Gagal membaca file: ${err.message}`);
+        rawRows = [];
+        detectedFields = null;
+        updatePreview([]);
+        updateStats([], [], null);
+        setStatus(`Gagal membaca file: ${err.message}`, 'err');
       }
     });
 
     btnRender.addEventListener('click', () => {
       try {
-        if (!rawRows.length) throw new Error('Belum ada file yang diunggah.');
-        renderPoints(rawRows, detectedFields);
+        if (!rawRows.length) {
+          throw new Error('Belum ada file yang diunggah.');
+        }
+        if (!detectedFields) {
+          throw new Error('Kolom data belum terdeteksi.');
+        }
+
+        plottedRows = buildValidRows(rawRows, detectedFields);
+        renderPoints(plottedRows);
+        updateStats(rawRows, plottedRows, detectedFields);
+
+        const coordMode = document.getElementById('coordMode').value;
+        let extra = '';
+        if (coordMode === 'utm') {
+          const zone = document.getElementById('utmZone').value;
+          const hemi = document.getElementById('utmHemisphere').value;
+          extra = `\nTransformasi: UTM Zone ${zone} ${hemi}`;
+        } else {
+          extra = '\nTransformasi: menggunakan longitude/latitude langsung';
+        }
+
+        setStatus(`Berhasil menampilkan ${plottedRows.length} titik di peta.${extra}`, 'ok');
       } catch (err) {
         console.error(err);
-        setStatus(`Gagal menampilkan data: ${err.message}`);
+        pointLayer.clearLayers();
+        plottedRows = [];
+        updateStats(rawRows, plottedRows, detectedFields);
+        setStatus(`Gagal menampilkan data: ${err.message}`, 'err');
       }
     });
 
-    btnClear.addEventListener('click', clearPoints);
+    btnClear.addEventListener('click', clearLayer);
   </script>
 </body>
 </html>
