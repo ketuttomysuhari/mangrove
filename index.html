@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visualisasi Batimetri dengan CesiumJS</title>
+
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: rgba(10, 20, 38, 0.92);
+      --panel-2: rgba(17, 31, 56, 0.92);
+      --line: rgba(255,255,255,0.12);
+      --text: #e8f1ff;
+      --muted: #9bb2d6;
+      --accent: #3fa7ff;
+      --danger: #ff7b72;
+      --ok: #3ddc97;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; font-family: Inter, Arial, sans-serif; background: var(--bg); color: var(--text); }
+    #app { display: grid; grid-template-columns: 360px 1fr; width: 100%; height: 100%; }
+    #sidebar {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border-right: 1px solid var(--line);
+      padding: 18px;
+      overflow: auto;
+    }
+    #cesiumContainer { width: 100%; height: 100%; }
+    h1 { margin: 0 0 10px; font-size: 20px; }
+    h2 { margin: 18px 0 10px; font-size: 15px; color: #cfe3ff; }
+    p, li, label, small { color: var(--muted); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 14px;
+      background: rgba(255,255,255,0.03);
+      backdrop-filter: blur(8px);
+    }
+    .grid { display: grid; gap: 10px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    input[type="file"], select, input[type="number"], button, textarea {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    button {
+      cursor: pointer;
+      background: linear-gradient(180deg, #1691ff, #0c6dd8);
+      border: none;
+      font-weight: 600;
+    }
+    button.secondary {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--line);
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(255,255,255,0.04);
+    }
+    .stat strong { display: block; font-size: 18px; color: #fff; margin-top: 4px; }
+    .hint { font-size: 12px; line-height: 1.55; }
+    .legend { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.04);
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    #message { white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+    .ok { color: var(--ok); }
+    .err { color: var(--danger); }
+    .table-wrap {
+      max-height: 180px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); text-align: left; }
+    th { position: sticky; top: 0; background: #0e1b31; color: #dce9ff; }
+    @media (max-width: 980px) {
+      #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      #sidebar { max-height: 46vh; border-right: none; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <h1>Batimetri + CesiumJS</h1>
+      <p>Unggah data Excel atau TXT/CSV, lalu tampilkan titik kedalaman batimetri di peta 3D Cesium.</p>
+
+      <div class="card grid">
+        <label><strong>1. Upload file data</strong></label>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.txt" />
+        <small class="hint">
+          Format yang didukung: <b>.xlsx</b>, <b>.xls</b>, <b>.csv</b>, <b>.txt</b>.<br>
+          Sistem mencoba mendeteksi kolom otomatis: <b>lon/longitude/x</b>, <b>lat/latitude/y</b>, dan <b>depth/z/elevation</b>.
+        </small>
+      </div>
+
+      <div class="card grid">
+        <label><strong>2. Parameter tampilan</strong></label>
+        <div class="grid grid-2">
+          <div>
+            <label for="pointSize">Ukuran titik</label>
+            <input type="number" id="pointSize" value="6" min="1" max="30" />
+          </div>
+          <div>
+            <label for="verticalExaggeration">Exaggeration Z</label>
+            <input type="number" id="verticalExaggeration" value="1" min="0.1" step="0.1" />
+          </div>
+        </div>
+        <div>
+          <label for="heightMode">Mode elevasi</label>
+          <select id="heightMode">
+            <option value="depth-negative">Depth menjadi tinggi negatif</option>
+            <option value="depth-positive">Depth menjadi tinggi positif</option>
+            <option value="z-direct">Gunakan Z apa adanya</option>
+          </select>
+        </div>
+        <div>
+          <label for="baseHeight">Base height (meter)</label>
+          <input type="number" id="baseHeight" value="0" step="0.1" />
+        </div>
+        <div class="row">
+          <button id="btnRender">Tampilkan Data</button>
+          <button class="secondary" id="btnClear" type="button">Hapus Layer</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <label><strong>3. Format contoh</strong></label>
+        <textarea readonly>longitude,latitude,depth
+112.7501,-7.2574,12.5
+112.7503,-7.2578,18.2
+112.7507,-7.2581,25.0</textarea>
+        <small class="hint">
+          Depth umumnya bernilai positif sebagai kedalaman. Sistem akan mengubahnya ke tinggi negatif jika memilih mode <b>Depth menjadi tinggi negatif</b>.
+        </small>
+      </div>
+
+      <div class="card">
+        <label><strong>4. Statistik data</strong></label>
+        <div class="stats">
+          <div class="stat"><span>Jumlah titik</span><strong id="statCount">0</strong></div>
+          <div class="stat"><span>Kolom terbaca</span><strong id="statFields">-</strong></div>
+          <div class="stat"><span>Depth/Z minimum</span><strong id="statMin">-</strong></div>
+          <div class="stat"><span>Depth/Z maksimum</span><strong id="statMax">-</strong></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <label><strong>Legenda warna kedalaman</strong></label>
+        <div class="legend">
+          <span class="chip"><span class="dot" style="background:#00d4ff"></span> dangkal</span>
+          <span class="chip"><span class="dot" style="background:#00ff9c"></span> sedang</span>
+          <span class="chip"><span class="dot" style="background:#ffee00"></span> lebih dalam</span>
+          <span class="chip"><span class="dot" style="background:#ff6b00"></span> dalam</span>
+          <span class="chip"><span class="dot" style="background:#ff2e63"></span> terdalam</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <label><strong>Preview data</strong></label>
+        <div class="table-wrap">
+          <table id="previewTable">
+            <thead><tr id="previewHead"></tr></thead>
+            <tbody id="previewBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <label><strong>Status</strong></label>
+        <div id="message">Menunggu file diunggah.</div>
+      </div>
+    </aside>
+
+    <main id="cesiumContainer"></main>
+  </div>
+
+  <script>
+    // =========================
+    // KONFIGURASI CESIUM
+    // =========================
+    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjOWRmOThmYS1iYjhiLTQ4YzgtOTAzMC1hYjE5OGZmZDExMGUiLCJpZCI6MjUyMDkzLCJpYXQiOjE3MzA0MTMxMzB9.oiJJytiAc-uPwL9DTfzg-iulsz8DixZOtWrbtO1K9rI";
+
+    const viewer = new Cesium.Viewer("cesiumContainer", {
+      animation: false,
+      timeline: false,
+      infoBox: true,
+      selectionIndicator: true,
+      terrain: Cesium.Terrain.fromWorldTerrain(),
+      baseLayerPicker: true,
+      geocoder: true,
+      homeButton: true,
+      sceneModePicker: true,
+      navigationHelpButton: true,
+      fullscreenButton: true,
+      shouldAnimate: true
+    });
+
+    viewer.scene.globe.depthTestAgainstTerrain = false;
+    viewer.scene.primitives.add(awaitCesiumOsmBuildings());
+
+    function awaitCesiumOsmBuildings() {
+      return Cesium.createOsmBuildingsAsync().catch(() => null);
+    }
+
+    // =========================
+    // STATE
+    // =========================
+    let rawRows = [];
+    let currentCollection = null;
+    let currentEntities = [];
+    let detectedFields = null;
+
+    const fileInput = document.getElementById("fileInput");
+    const btnRender = document.getElementById("btnRender");
+    const btnClear = document.getElementById("btnClear");
+    const pointSizeInput = document.getElementById("pointSize");
+    const verticalExaggerationInput = document.getElementById("verticalExaggeration");
+    const heightModeInput = document.getElementById("heightMode");
+    const baseHeightInput = document.getElementById("baseHeight");
+    const messageEl = document.getElementById("message");
+
+    function setMessage(msg, type = "") {
+      messageEl.className = type;
+      messageEl.textContent = msg;
+    }
+
+    function normalizeKey(key) {
+      return String(key || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+    }
+
+    function detectFields(rows) {
+      if (!rows.length) return null;
+      const keys = Object.keys(rows[0]);
+      const normalized = keys.map(k => ({ raw: k, n: normalizeKey(k) }));
+
+      const findField = (candidates) => {
+        for (const cand of candidates) {
+          const found = normalized.find(k => k.n === cand || k.n.includes(cand));
+          if (found) return found.raw;
+        }
+        return null;
+      };
+
+      const lonField = findField(["longitude", "lon", "x", "easting"]);
+      const latField = findField(["latitude", "lat", "y", "northing"]);
+      const zField = findField(["depth", "bathymetry", "z", "elevation", "height", "kedalaman"]);
+
+      return { lonField, latField, zField };
+    }
+
+    function toNumber(val) {
+      if (val === null || val === undefined || val === "") return null;
+      const cleaned = String(val).trim().replace(/,/g, ".");
+      const num = Number(cleaned);
+      return Number.isFinite(num) ? num : null;
+    }
+
+    function computeHeight(z, mode, baseHeight, exaggeration) {
+      if (z === null) return null;
+      if (mode === "depth-negative") return baseHeight + (-Math.abs(z) * exaggeration);
+      if (mode === "depth-positive") return baseHeight + (Math.abs(z) * exaggeration);
+      return baseHeight + (z * exaggeration);
+    }
+
+    function interpolateColor(t) {
+      const stops = [
+        { t: 0.00, c: [0, 212, 255] },
+        { t: 0.25, c: [0, 255, 156] },
+        { t: 0.50, c: [255, 238, 0] },
+        { t: 0.75, c: [255, 107, 0] },
+        { t: 1.00, c: [255, 46, 99] }
+      ];
+
+      if (t <= 0) return Cesium.Color.fromBytes(...stops[0].c, 230);
+      if (t >= 1) return Cesium.Color.fromBytes(...stops[stops.length - 1].c, 230);
+
+      let a = stops[0], b = stops[1];
+      for (let i = 0; i < stops.length - 1; i++) {
+        if (t >= stops[i].t && t <= stops[i + 1].t) {
+          a = stops[i];
+          b = stops[i + 1];
+          break;
+        }
+      }
+      const localT = (t - a.t) / (b.t - a.t);
+      const mix = (v1, v2) => Math.round(v1 + (v2 - v1) * localT);
+      return Cesium.Color.fromBytes(mix(a.c[0], b.c[0]), mix(a.c[1], b.c[1]), mix(a.c[2], b.c[2]), 230);
+    }
+
+    function clearBathymetry() {
+      if (currentCollection) {
+        viewer.scene.primitives.remove(currentCollection);
+        currentCollection = null;
+      }
+      if (currentEntities.length) {
+        currentEntities.forEach(ent => viewer.entities.remove(ent));
+        currentEntities = [];
+      }
+    }
+
+    function updateStats(rows, fields) {
+      document.getElementById("statCount").textContent = rows.length;
+      document.getElementById("statFields").textContent = fields ? `${fields.lonField || '-'} | ${fields.latField || '-'} | ${fields.zField || '-'}` : '-';
+      const zVals = rows.map(r => toNumber(r[fields.zField])).filter(v => v !== null);
+      document.getElementById("statMin").textContent = zVals.length ? Math.min(...zVals).toFixed(3) : '-';
+      document.getElementById("statMax").textContent = zVals.length ? Math.max(...zVals).toFixed(3) : '-';
+    }
+
+    function previewRows(rows) {
+      const head = document.getElementById("previewHead");
+      const body = document.getElementById("previewBody");
+      head.innerHTML = "";
+      body.innerHTML = "";
+      if (!rows.length) return;
+
+      const cols = Object.keys(rows[0]).slice(0, 8);
+      cols.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        head.appendChild(th);
+      });
+
+      rows.slice(0, 8).forEach(r => {
+        const tr = document.createElement("tr");
+        cols.forEach(col => {
+          const td = document.createElement("td");
+          td.textContent = r[col] ?? "";
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+    }
+
+    async function parseFile(file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (["xlsx", "xls"].includes(ext)) {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: "array" });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        return XLSX.utils.sheet_to_json(firstSheet, { defval: null });
+      }
+
+      const text = await file.text();
+      const workbook = XLSX.read(text, { type: "string" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      return XLSX.utils.sheet_to_json(firstSheet, { defval: null });
+    }
+
+    function renderBathymetry(rows, fields) {
+      clearBathymetry();
+
+      const pointSize = Math.max(1, Number(pointSizeInput.value) || 6);
+      const exaggeration = Number(verticalExaggerationInput.value) || 1;
+      const heightMode = heightModeInput.value;
+      const baseHeight = Number(baseHeightInput.value) || 0;
+
+      const lonField = fields.lonField;
+      const latField = fields.latField;
+      const zField = fields.zField;
+
+      if (!lonField || !latField || !zField) {
+        throw new Error("Kolom tidak lengkap. Pastikan ada longitude/lon/x, latitude/lat/y, dan depth/z.");
+      }
+
+      const valid = rows
+        .map(r => {
+          const lon = toNumber(r[lonField]);
+          const lat = toNumber(r[latField]);
+          const z = toNumber(r[zField]);
+          return { raw: r, lon, lat, z };
+        })
+        .filter(r => r.lon !== null && r.lat !== null && r.z !== null && r.lon >= -180 && r.lon <= 180 && r.lat >= -90 && r.lat <= 90);
+
+      if (!valid.length) {
+        throw new Error("Tidak ada data valid yang bisa divisualisasikan. Cek nilai koordinat dan depth.");
+      }
+
+      const zMin = Math.min(...valid.map(v => v.z));
+      const zMax = Math.max(...valid.map(v => v.z));
+      const range = (zMax - zMin) || 1;
+
+      currentCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
+
+      valid.forEach((item, idx) => {
+        const t = (item.z - zMin) / range;
+        const color = interpolateColor(t);
+        const height = computeHeight(item.z, heightMode, baseHeight, exaggeration);
+        const position = Cesium.Cartesian3.fromDegrees(item.lon, item.lat, height);
+
+        currentCollection.add({
+          position,
+          color,
+          pixelSize: pointSize,
+          outlineColor: Cesium.Color.BLACK.withAlpha(0.25),
+          outlineWidth: 1,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY
+        });
+
+        if (idx < 2000) {
+          const ent = viewer.entities.add({
+            position,
+            properties: {
+              longitude: item.lon,
+              latitude: item.lat,
+              depth: item.z,
+              height: height,
+              ...item.raw
+            },
+            point: {
+              pixelSize: Math.max(6, pointSize + 2),
+              color: color.withAlpha(0.0),
+              outlineColor: Cesium.Color.TRANSPARENT,
+              outlineWidth: 0
+            },
+            description: `
+              <table style="width:100%; border-collapse:collapse;">
+                <tr><th style="text-align:left; padding:4px;">Longitude</th><td style="padding:4px;">${item.lon}</td></tr>
+                <tr><th style="text-align:left; padding:4px;">Latitude</th><td style="padding:4px;">${item.lat}</td></tr>
+                <tr><th style="text-align:left; padding:4px;">Depth/Z</th><td style="padding:4px;">${item.z}</td></tr>
+                <tr><th style="text-align:left; padding:4px;">Height Cesium</th><td style="padding:4px;">${height}</td></tr>
+              </table>
+            `
+          });
+          currentEntities.push(ent);
+        }
+      });
+
+      const positions = valid.map(item => {
+        const h = computeHeight(item.z, heightMode, baseHeight, exaggeration);
+        return Cesium.Cartesian3.fromDegrees(item.lon, item.lat, h);
+      });
+
+      viewer.zoomTo(viewer.entities);
+      viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(positions), {
+        duration: 2.2,
+        offset: new Cesium.HeadingPitchRange(0, -0.9, Math.max(500, positions.length * 0.6))
+      });
+
+      setMessage(`Berhasil menampilkan ${valid.length} titik batimetri.\nKolom terdeteksi: ${lonField}, ${latField}, ${zField}`, "ok");
+    }
+
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        setMessage("Membaca file...");
+        rawRows = await parseFile(file);
+        if (!rawRows.length) {
+          setMessage("File berhasil dibaca, tetapi tidak ada baris data.", "err");
+          return;
+        }
+        detectedFields = detectFields(rawRows);
+        updateStats(rawRows, detectedFields);
+        previewRows(rawRows);
+        setMessage(`File ${file.name} berhasil dibaca. Klik 'Tampilkan Data' untuk visualisasi.`, "ok");
+      } catch (err) {
+        console.error(err);
+        setMessage(`Gagal membaca file: ${err.message}`, "err");
+      }
+    });
+
+    btnRender.addEventListener("click", () => {
+      try {
+        if (!rawRows.length) {
+          setMessage("Belum ada file yang diunggah.", "err");
+          return;
+        }
+        renderBathymetry(rawRows, detectedFields);
+      } catch (err) {
+        console.error(err);
+        setMessage(`Gagal menampilkan data: ${err.message}`, "err");
+      }
+    });
+
+    btnClear.addEventListener("click", () => {
+      clearBathymetry();
+      setMessage("Layer batimetri dihapus dari tampilan.");
+    });
+
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(118.0, -2.5, 4500000)
+    });
+  </script>
+</body>
+</html>
