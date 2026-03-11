@@ -1,54 +1,71 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Leaflet Uploader Data X Y Z / UTM</title>
+  <title>Leaflet Bathymetry / Elevation Analysis</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; font-family: Arial, Helvetica, sans-serif; }
-    #app {
-      display: grid;
-      grid-template-columns: 390px 1fr;
-      height: 100%;
-    }
+    #app { display: grid; grid-template-columns: 420px 1fr; height: 100%; }
     #sidebar {
       background: #f8fafc;
       border-right: 1px solid #cbd5e1;
       overflow-y: auto;
       padding: 16px;
     }
+    #mapWrap { position: relative; width: 100%; height: 100%; }
     #map { width: 100%; height: 100%; }
-    h1 {
-      margin: 0 0 8px;
-      font-size: 22px;
-      color: #0f172a;
+    #profilePanel {
+      position: absolute;
+      right: 12px;
+      bottom: 96px;
+      width: 520px;
+      height: 320px;
+      background: rgba(255,255,255,0.98);
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+      z-index: 900;
+      display: none;
+      overflow: hidden;
     }
-    p.lead {
-      margin: 0 0 14px;
-      color: #475569;
-      line-height: 1.5;
-      font-size: 14px;
-    }
-    .card {
+    #profileHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid #e2e8f0;
       background: #ffffff;
+      font-weight: 700;
+      color: #0f172a;
+      font-size: 14px;
+      gap: 8px;
+    }
+    #profileHeaderActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #profileChart { width: 100%; height: calc(100% - 45px); }
+    h1 { margin: 0 0 8px; font-size: 22px; color: #0f172a; }
+    p.lead { margin: 0 0 14px; color: #475569; line-height: 1.5; font-size: 14px; }
+    .card {
+      background: #fff;
       border: 1px solid #e2e8f0;
       border-radius: 14px;
       padding: 14px;
       margin-bottom: 14px;
       box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
-    .card h2 {
-      margin: 0 0 10px;
-      font-size: 15px;
-      color: #0f172a;
-    }
+    .card h2 { margin: 0 0 10px; font-size: 15px; color: #0f172a; }
     label {
       display: block;
       margin-bottom: 6px;
@@ -56,11 +73,7 @@
       font-weight: 700;
       color: #334155;
     }
-    input[type="file"],
-    input[type="number"],
-    select,
-    button,
-    textarea {
+    input[type="file"], input[type="number"], select, button, textarea {
       width: 100%;
       padding: 10px 12px;
       border: 1px solid #cbd5e1;
@@ -68,167 +81,90 @@
       font-size: 14px;
       background: #fff;
     }
-    textarea {
-      resize: vertical;
-      min-height: 80px;
-      font-family: Consolas, monospace;
-      font-size: 12px;
-    }
-    button {
-      border: none;
-      cursor: pointer;
-      font-weight: 700;
-      background: #2563eb;
-      color: #fff;
-    }
-    button.secondary {
-      background: #64748b;
-    }
-    button.success {
-      background: #0f766e;
-    }
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-    .row-3 {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-    }
-    .hint {
-      font-size: 12px;
-      color: #64748b;
-      line-height: 1.5;
-      margin-top: 8px;
-    }
-    .status {
-      font-size: 13px;
-      line-height: 1.55;
-      color: #334155;
-      white-space: pre-wrap;
-    }
+    textarea { resize: vertical; min-height: 80px; font-family: Consolas, monospace; font-size: 12px; }
+    button { border: none; cursor: pointer; font-weight: 700; background: #2563eb; color: #fff; }
+    button.secondary { background: #64748b; }
+    button.success { background: #0f766e; }
+    button.warn { background: #b45309; }
+    button.danger { background: #ef4444; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .hint { font-size: 12px; color: #64748b; line-height: 1.5; margin-top: 8px; }
+    .status { font-size: 13px; line-height: 1.55; color: #334155; white-space: pre-wrap; }
     .ok { color: #166534; }
     .err { color: #b91c1c; }
-    .stats {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-    .stat {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 10px;
-    }
-    .stat span {
-      display: block;
-      font-size: 12px;
-      color: #64748b;
-    }
-    .stat strong {
-      display: block;
-      margin-top: 4px;
-      font-size: 18px;
-      color: #0f172a;
-    }
-    .table-wrap {
-      max-height: 220px;
-      overflow: auto;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-    th, td {
-      border-bottom: 1px solid #e2e8f0;
-      padding: 7px;
-      text-align: left;
-      vertical-align: top;
-    }
-    th {
-      position: sticky;
-      top: 0;
-      background: #f1f5f9;
-      color: #0f172a;
-      z-index: 1;
-    }
-    .badge {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: #e2e8f0;
-      font-size: 11px;
-      font-weight: 700;
-      color: #334155;
-      margin-right: 4px;
-      margin-bottom: 4px;
-    }
-    .legend-box {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; }
+    .stat span { display: block; font-size: 12px; color: #64748b; }
+    .stat strong { display: block; margin-top: 4px; font-size: 18px; color: #0f172a; }
+    .table-wrap { max-height: 220px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 7px; text-align: left; vertical-align: top; }
+    th { position: sticky; top: 0; background: #f1f5f9; color: #0f172a; z-index: 1; }
+    .legend-box { display: flex; flex-wrap: wrap; gap: 8px; }
     .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: #475569;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      padding: 6px 8px;
-      border-radius: 999px;
+      display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569;
+      background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 999px;
     }
-    .legend-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      display: inline-block;
-      border: 1px solid rgba(0,0,0,0.15);
+    .legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,0.15); }
+    .badge {
+      display: inline-block; padding: 5px 8px; border-radius: 999px; background: #e2e8f0;
+      font-size: 11px; font-weight: 700; color: #334155; margin-right: 6px; margin-bottom: 6px;
     }
-    @media (max-width: 980px) {
-      #app {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto 1fr;
-      }
-      #sidebar {
-        border-right: none;
-        border-bottom: 1px solid #cbd5e1;
-        max-height: 48vh;
-      }
+    .btn-block { display: block; width: 100%; margin-top: 10px; }
+    .leaflet-popup-content table { width: 100%; border-collapse: collapse; }
+    .leaflet-popup-content th, .leaflet-popup-content td { border: 1px solid #ddd; padding: 4px; font-size: 12px; }
+    .measurement-box {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 850;
+      min-width: 230px;
+      background: rgba(255,255,255,0.97);
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 10px 12px;
+      box-shadow: 0 8px 24px rgba(15,23,42,0.12);
+      font-size: 13px;
+      color: #0f172a;
+    }
+    .measurement-box h3 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+    .measurement-box div { margin-bottom: 4px; }
+    @media (max-width: 1100px) {
+      #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      #sidebar { border-right: none; border-bottom: 1px solid #cbd5e1; max-height: 48vh; }
+      #profilePanel { left: 12px; right: 12px; width: auto; bottom: 110px; }
+      .measurement-box { top: auto; bottom: 12px; right: 12px; left: 12px; min-width: auto; }
     }
   </style>
 </head>
 <body>
   <div id="app">
     <aside id="sidebar">
-      <h1>Upload Data X Y Z ke Leaflet</h1>
+      <h1>Leaflet Bathymetry / Elevation Analysis</h1>
       <p class="lead">
-        Versi ini membaca Excel, CSV, atau TXT yang berisi kolom <b>X</b>, <b>Y</b>, dan <b>Z</b>. Data dapat memakai koma desimal seperti <b>300356,417</b>. Untuk data UTM, sistem akan mengonversi ke latitude dan longitude agar bisa ditampilkan di peta satelit.
+        This version supports Excel/CSV/TXT upload, UTM to WGS84 coordinate transformation, input point display, IDW-based DTM, initial contours, profile line creation, profile CSV export, hover synchronization between the profile chart and the map, and built-in measurement tools.
       </p>
 
       <div class="card">
         <h2>1. Upload file</h2>
-        <label for="fileInput">Pilih Excel / CSV / TXT</label>
+        <label for="fileInput">Choose Excel / CSV / TXT</label>
         <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.txt" />
         <div class="hint">
-          Sistem mencoba membaca sheet pertama dan mendeteksi kolom otomatis seperti: <b>No</b>, <b>X</b>, <b>Y</b>, <b>Z</b>, <b>Z. Elepsoid</b>, <b>Elevation</b>, <b>Depth</b>.
+          Supported headers include <b>No</b>, <b>X</b>, <b>Y</b>, <b>Z</b>, <b>Z. Elepsoid</b>, <b>Elevation</b>, and <b>Depth</b>. For decimal comma values, <b>.xlsx</b> is the safest format.
         </div>
       </div>
 
       <div class="card">
-        <h2>2. Tipe koordinat</h2>
-        <label for="coordMode">Mode koordinat input</label>
+        <h2>2. Input coordinates</h2>
+        <label for="coordMode">Coordinate mode</label>
         <select id="coordMode">
           <option value="utm" selected>Projected UTM (X = Easting, Y = Northing)</option>
-          <option value="lonlat">Longitude/Latitude langsung</option>
+          <option value="lonlat">Longitude / Latitude direct input</option>
         </select>
-
         <div id="utmOptions" style="margin-top:10px;">
           <div class="row">
             <div>
@@ -243,23 +179,17 @@
               </select>
             </div>
           </div>
-          <div style="margin-top:10px;">
-            <label for="datum">Datum / Ellipsoid</label>
-            <select id="datum">
-              <option value="WGS84" selected>WGS84</option>
-            </select>
-          </div>
           <div class="hint">
-            Untuk contoh Indonesia seperti yang Anda kirim, sangat mungkin data adalah UTM di belahan selatan. Jika titik belum tepat, biasanya yang perlu dicek adalah <b>zone UTM</b>.
+            If the points appear shifted, the UTM zone is usually the first parameter to check.
           </div>
         </div>
       </div>
 
       <div class="card">
-        <h2>3. Pengaturan tampilan</h2>
+        <h2>3. Point display</h2>
         <div class="row-3">
           <div>
-            <label for="markerRadius">Radius marker</label>
+            <label for="markerRadius">Radius</label>
             <input type="number" id="markerRadius" value="6" min="2" max="20" />
           </div>
           <div>
@@ -271,54 +201,108 @@
             <input type="number" id="opacity" value="0.85" min="0.1" max="1" step="0.05" />
           </div>
         </div>
-        <div style="margin-top:10px;">
-          <label for="colorMode">Warna marker</label>
-          <select id="colorMode">
-            <option value="single">Satu warna</option>
-            <option value="zvalue" selected>Berdasarkan nilai Z</option>
-          </select>
-        </div>
-        <div class="row" style="margin-top:12px;">
-          <button id="btnRender">Tampilkan di Peta</button>
-          <button id="btnClear" class="secondary" type="button">Hapus Layer</button>
-        </div>
       </div>
 
       <div class="card">
-        <h2>4. Contoh format data</h2>
-        <textarea readonly>No,X,Y,Z. Elepsoid
-1,300356.417,9031973.976,43.696
-2,300356.804,9031973.510,43.696
-3,300357.159,9031973.019,43.696</textarea>
+        <h2>4. DTM and contour analysis</h2>
+        <div class="row-3">
+          <div>
+            <label for="gridRows">Grid rows</label>
+            <input type="number" id="gridRows" value="45" min="10" max="180" />
+          </div>
+          <div>
+            <label for="gridCols">Grid cols</label>
+            <input type="number" id="gridCols" value="45" min="10" max="180" />
+          </div>
+          <div>
+            <label for="idwPower">IDW power</label>
+            <input type="number" id="idwPower" value="2" min="1" max="5" step="0.5" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <label for="contourInterval">Contour interval</label>
+            <input type="number" id="contourInterval" value="0.01" min="0.001" step="0.001" />
+          </div>
+          <div>
+            <label for="profileSamples">Profile samples</label>
+            <input type="number" id="profileSamples" value="120" min="20" max="500" />
+          </div>
+        </div>
         <div class="hint">
-          Jika file Anda memakai koma sebagai desimal, seperti <b>300356,417</b>, sistem akan mencoba mengubahnya menjadi <b>300356.417</b>. Untuk CSV dengan delimiter koma dan desimal koma secara bersamaan, format paling aman adalah <b>Excel .xlsx</b> atau <b>TXT/CSV dengan pemisah titik koma</b>.
+          Larger grids produce smoother results but are computationally heavier. The contour output here is an initial browser-based result built from a simplified marching-squares approach.
+        </div>
+        <button id="btnBuildDTM" class="success btn-block">Build / Update DTM</button>
+        <button id="btnBuildContour" class="warn btn-block">Build Initial Contours</button>
+      </div>
+
+      <div class="card">
+        <h2>5. Profile and measurement tools</h2>
+        <div class="row">
+          <button id="btnProfileMode">Activate Profile Line Mode</button>
+          <button id="btnMeasureMode" class="secondary">Measure Distance / Area</button>
+        </div>
+        <div class="hint">
+          Profile mode lets you draw a line and generate a profile chart. Measurement mode lets you draw a polyline for distance or a polygon for area. Hover on the profile chart to identify the corresponding location on the map.
         </div>
       </div>
 
       <div class="card">
-        <h2>5. Statistik</h2>
+        <h2>6. Data operations</h2>
+        <div class="row">
+          <button id="btnRenderPoints">Display Points</button>
+          <button id="btnClearAll" class="secondary">Clear All Layers</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>7. Sample format</h2>
+        <textarea readonly>No;X;Y;Z. Elepsoid
+1;300356,417;9031973,976;43,696
+2;300356,804;9031973,510;43,696
+3;300357,159;9031973,019;43,696</textarea>
+        <div class="hint">
+          For CSV files with decimal commas, use a <b>semicolon</b> separator or save the file as <b>.xlsx</b>.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>8. Statistics</h2>
         <div class="stats">
-          <div class="stat"><span>Jumlah baris</span><strong id="statRows">0</strong></div>
-          <div class="stat"><span>Titik valid</span><strong id="statValid">0</strong></div>
-          <div class="stat"><span>Kolom terbaca</span><strong id="statFields">-</strong></div>
+          <div class="stat"><span>Total rows</span><strong id="statRows">0</strong></div>
+          <div class="stat"><span>Valid points</span><strong id="statValid">0</strong></div>
+          <div class="stat"><span>Detected fields</span><strong id="statFields">-</strong></div>
           <div class="stat"><span>Z minimum</span><strong id="statZmin">-</strong></div>
-          <div class="stat"><span>Z maksimum</span><strong id="statZmax">-</strong></div>
+          <div class="stat"><span>Z maximum</span><strong id="statZmax">-</strong></div>
         </div>
       </div>
 
       <div class="card">
-        <h2>6. Legenda</h2>
-        <div class="legend-box" id="legendBox">
-          <div class="legend-item"><span class="legend-dot" style="background:#0ea5e9"></span> nilai Z rendah</div>
-          <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span> menengah rendah</div>
-          <div class="legend-item"><span class="legend-dot" style="background:#facc15"></span> menengah</div>
-          <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span> menengah tinggi</div>
-          <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> nilai Z tinggi</div>
+        <h2>9. Active layers</h2>
+        <div>
+          <span class="badge">Input points</span>
+          <span class="badge">IDW DTM</span>
+          <span class="badge">Contours</span>
+          <span class="badge">Profile line</span>
+          <span class="badge">Profile samples</span>
+          <span class="badge">Hover marker</span>
+          <span class="badge">Measurement</span>
         </div>
       </div>
 
       <div class="card">
-        <h2>7. Preview data</h2>
+        <h2>10. Color legend</h2>
+        <div class="legend-box">
+          <div class="legend-item"><span class="legend-dot" style="background:#0ea5e9"></span> low values</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span> low-medium values</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#facc15"></span> medium values</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span> medium-high values</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> high values</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>11. Data preview</h2>
         <div class="table-wrap">
           <table>
             <thead><tr id="previewHead"></tr></thead>
@@ -328,59 +312,113 @@
       </div>
 
       <div class="card">
-        <h2>8. Status</h2>
-        <div id="status" class="status">Menunggu file diunggah.</div>
+        <h2>12. Status</h2>
+        <div id="status" class="status">Waiting for file upload.</div>
       </div>
     </aside>
 
-    <main id="map"></main>
+    <main id="mapWrap">
+      <div id="map"></div>
+      <div class="measurement-box" id="measurementBox">
+        <h3>Measurement Summary</h3>
+        <div><strong>Mode:</strong> <span id="measureModeText">None</span></div>
+        <div><strong>Distance:</strong> <span id="measureDistanceText">-</span></div>
+        <div><strong>Area:</strong> <span id="measureAreaText">-</span></div>
+        <div><strong>Perimeter:</strong> <span id="measurePerimeterText">-</span></div>
+      </div>
+      <div id="profilePanel">
+        <div id="profileHeader">
+          <span>Elevation / Bathymetry Profile</span>
+          <div id="profileHeaderActions">
+            <button id="btnExportProfileCsv" type="button" style="width:auto; padding:6px 10px; border-radius:8px; background:#0f766e; color:#fff;">Export CSV</button>
+            <button id="btnCloseProfile" type="button" class="danger" style="width:auto; padding:6px 10px; border-radius:8px;">Close</button>
+          </div>
+        </div>
+        <div id="profileChart"></div>
+      </div>
+    </main>
   </div>
 
   <script>
     const map = L.map('map', { preferCanvas: true }).setView([-2.5, 118.0], 5);
 
-    const esriSatellite = L.tileLayer(
+    const satellite = L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      {
-        attribution: '&copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-        maxZoom: 19
-      }
+      { attribution: '&copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community', maxZoom: 19 }
     ).addTo(map);
 
-    const esriLabels = L.tileLayer(
+    const labels = L.tileLayer(
       'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-      {
-        attribution: 'Labels &copy; Esri',
-        maxZoom: 19
-      }
+      { attribution: 'Labels &copy; Esri', maxZoom: 19 }
     ).addTo(map);
 
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 19
+      attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
     });
 
+    const pointLayer = L.layerGroup().addTo(map);
+    const dtmLayer = L.layerGroup().addTo(map);
+    const contourLayer = L.layerGroup().addTo(map);
+    const profileLineLayer = L.layerGroup().addTo(map);
+    const profileSampleLayer = L.layerGroup().addTo(map);
+    const hoverLayer = L.layerGroup().addTo(map);
+    const measurementLayer = L.layerGroup().addTo(map);
+    const drawnItems = new L.FeatureGroup().addTo(map);
+
     L.control.layers(
+      { 'Satellite': satellite, 'OpenStreetMap': osm },
       {
-        'Satellite': esriSatellite,
-        'OpenStreetMap': osm
+        'Labels': labels,
+        'Input Points': pointLayer,
+        'IDW DTM': dtmLayer,
+        'Contours': contourLayer,
+        'Profile Line': profileLineLayer,
+        'Profile Samples': profileSampleLayer,
+        'Hover Marker': hoverLayer,
+        'Measurement': measurementLayer
       },
-      {
-        'Labels': esriLabels
-      }
+      { collapsed: false }
     ).addTo(map);
 
     let rawRows = [];
     let plottedRows = [];
     let detectedFields = null;
-    let pointLayer = L.layerGroup().addTo(map);
+    let dtmGridData = null;
+    let latestProfileData = [];
+    let latestProfileFileName = 'profile_export.csv';
+    let activeToolMode = 'none';
+
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: false,
+        rectangle: false,
+        circle: false,
+        marker: false,
+        circlemarker: false,
+        polyline: false
+      },
+      edit: { featureGroup: drawnItems, edit: false, remove: false }
+    });
+    map.addControl(drawControl);
 
     const fileInput = document.getElementById('fileInput');
-    const btnRender = document.getElementById('btnRender');
-    const btnClear = document.getElementById('btnClear');
     const statusEl = document.getElementById('status');
     const coordModeEl = document.getElementById('coordMode');
     const utmOptionsEl = document.getElementById('utmOptions');
+    const btnRenderPoints = document.getElementById('btnRenderPoints');
+    const btnBuildDTM = document.getElementById('btnBuildDTM');
+    const btnBuildContour = document.getElementById('btnBuildContour');
+    const btnProfileMode = document.getElementById('btnProfileMode');
+    const btnMeasureMode = document.getElementById('btnMeasureMode');
+    const btnClearAll = document.getElementById('btnClearAll');
+    const btnCloseProfile = document.getElementById('btnCloseProfile');
+    const btnExportProfileCsv = document.getElementById('btnExportProfileCsv');
+    const profilePanel = document.getElementById('profilePanel');
+    const profileChartEl = document.getElementById('profileChart');
+    const measureModeText = document.getElementById('measureModeText');
+    const measureDistanceText = document.getElementById('measureDistanceText');
+    const measureAreaText = document.getElementById('measureAreaText');
+    const measurePerimeterText = document.getElementById('measurePerimeterText');
 
     function setStatus(msg, type = '') {
       statusEl.className = 'status ' + type;
@@ -388,28 +426,20 @@
     }
 
     function normalizeKey(key) {
-      return String(key || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '');
+      return String(key || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
     }
 
     function parseDecimal(value) {
       if (value === null || value === undefined || value === '') return null;
       if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-
       let s = String(value).trim();
       if (!s) return null;
-
       s = s.replace(/\s+/g, '');
-
       const hasComma = s.includes(',');
       const hasDot = s.includes('.');
-
       if (hasComma && hasDot) {
         const lastComma = s.lastIndexOf(',');
         const lastDot = s.lastIndexOf('.');
-
         if (lastComma > lastDot) {
           s = s.replace(/\./g, '');
           s = s.replace(/,/g, '.');
@@ -419,7 +449,6 @@
       } else if (hasComma && !hasDot) {
         s = s.replace(/,/g, '.');
       }
-
       const n = Number(s);
       return Number.isFinite(n) ? n : null;
     }
@@ -443,22 +472,20 @@
 
       return {
         noField: findField(['no', 'nomor', 'id']),
-        xField: findField(['x', 'easting', 'east']),
-        yField: findField(['y', 'northing', 'north']),
-        zField: findField(['z', 'zelepsoid', 'zellipsoid', 'zelepsoid', 'elevation', 'depth', 'height', 'altitude', 'zellips', 'zellipsoid', 'zeleps'])
+        xField: findField(['x', 'easting', 'east', 'lon', 'longitude']),
+        yField: findField(['y', 'northing', 'north', 'lat', 'latitude']),
+        zField: findField(['z', 'zelepsoid', 'zellipsoid', 'elevation', 'depth', 'height', 'altitude'])
       };
     }
 
     async function parseFile(file) {
       const ext = file.name.split('.').pop().toLowerCase();
-
       if (['xlsx', 'xls'].includes(ext)) {
         const data = await file.arrayBuffer();
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         return XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false });
       }
-
       const text = await file.text();
       return parseDelimitedText(text);
     }
@@ -466,35 +493,23 @@
     function parseDelimitedText(text) {
       const lines = text.split(/\r?\n/).map(v => v.trim()).filter(Boolean);
       if (!lines.length) return [];
-
-      let delimiter = ',';
       const first = lines[0];
       const semicolons = (first.match(/;/g) || []).length;
       const tabs = (first.match(/\t/g) || []).length;
       const commas = (first.match(/,/g) || []).length;
-
+      let delimiter = ',';
       if (tabs > semicolons && tabs > commas) delimiter = '\t';
       else if (semicolons >= commas) delimiter = ';';
-      else delimiter = ',';
-
-      const splitLine = (line) => {
-        if (delimiter === '\t') return line.split('\t').map(v => v.trim());
-        return line.split(delimiter).map(v => v.trim());
-      };
-
+      const splitLine = (line) => delimiter === '\t' ? line.split('\t').map(v => v.trim()) : line.split(delimiter).map(v => v.trim());
       const headers = splitLine(lines[0]);
       const rows = [];
-
       for (let i = 1; i < lines.length; i++) {
         const parts = splitLine(lines[i]);
         if (!parts.length) continue;
         const row = {};
-        headers.forEach((header, idx) => {
-          row[header] = parts[idx] ?? null;
-        });
+        headers.forEach((header, idx) => row[header] = parts[idx] ?? null);
         rows.push(row);
       }
-
       return rows;
     }
 
@@ -503,16 +518,13 @@
       const body = document.getElementById('previewBody');
       head.innerHTML = '';
       body.innerHTML = '';
-
       if (!rows.length) return;
-
       const cols = Object.keys(rows[0]).slice(0, 8);
       cols.forEach(col => {
         const th = document.createElement('th');
         th.textContent = col;
         head.appendChild(th);
       });
-
       rows.slice(0, 10).forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(col => {
@@ -527,13 +539,10 @@
     function updateStats(rows, validRows, fields) {
       document.getElementById('statRows').textContent = rows.length;
       document.getElementById('statValid').textContent = validRows.length;
-      document.getElementById('statFields').textContent = fields
-        ? [fields.noField, fields.xField, fields.yField, fields.zField].filter(Boolean).join(' | ') || '-'
-        : '-';
-
+      document.getElementById('statFields').textContent = fields ? [fields.noField, fields.xField, fields.yField, fields.zField].filter(Boolean).join(' | ') || '-' : '-';
       const zVals = validRows.map(r => r.z).filter(v => v !== null && Number.isFinite(v));
-      document.getElementById('statZmin').textContent = zVals.length ? zVals.reduce((a, b) => Math.min(a, b)).toFixed(3) : '-';
-      document.getElementById('statZmax').textContent = zVals.length ? zVals.reduce((a, b) => Math.max(a, b)).toFixed(3) : '-';
+      document.getElementById('statZmin').textContent = zVals.length ? Math.min(...zVals).toFixed(3) : '-';
+      document.getElementById('statZmax').textContent = zVals.length ? Math.max(...zVals).toFixed(3) : '-';
     }
 
     function getUtmProjString(zone, hemisphere) {
@@ -542,145 +551,470 @@
     }
 
     function transformCoordinate(x, y) {
-      const coordMode = document.getElementById('coordMode').value;
-
-      if (coordMode === 'lonlat') {
-        return { lon: x, lat: y };
-      }
-
+      const coordMode = coordModeEl.value;
+      if (coordMode === 'lonlat') return { lon: x, lat: y };
       const zone = Number(document.getElementById('utmZone').value) || 49;
       const hemisphere = document.getElementById('utmHemisphere').value;
       const srcProj = getUtmProjString(zone, hemisphere);
-      const dstProj = proj4.WGS84;
-      const result = proj4(srcProj, dstProj, [x, y]);
-
+      const result = proj4(srcProj, proj4.WGS84, [x, y]);
       return { lon: result[0], lat: result[1] };
     }
 
-    function getColorByValue(value, min, max) {
-      if (value === null || !Number.isFinite(value) || min === null || max === null) return '#0ea5e9';
-      const range = (max - min) || 1;
-      const t = Math.max(0, Math.min(1, (value - min) / range));
-
-      if (t <= 0.2) return '#0ea5e9';
-      if (t <= 0.4) return '#22c55e';
-      if (t <= 0.6) return '#facc15';
-      if (t <= 0.8) return '#f97316';
+    function getColorFromZ(z, zMin, zMax) {
+      if (z === null || !Number.isFinite(z)) return '#94a3b8';
+      const t = Math.max(0, Math.min(1, (z - zMin) / ((zMax - zMin) || 1)));
+      if (t < 0.2) return '#0ea5e9';
+      if (t < 0.4) return '#22c55e';
+      if (t < 0.6) return '#facc15';
+      if (t < 0.8) return '#f97316';
       return '#ef4444';
     }
 
     function buildPopupTable(row, lon, lat) {
-      let html = '<div style="min-width:240px">';
-      html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
-      html += `<tr><th style="text-align:left; border:1px solid #ddd; padding:5px;">Longitude</th><td style="border:1px solid #ddd; padding:5px;">${lon.toFixed(8)}</td></tr>`;
-      html += `<tr><th style="text-align:left; border:1px solid #ddd; padding:5px;">Latitude</th><td style="border:1px solid #ddd; padding:5px;">${lat.toFixed(8)}</td></tr>`;
+      let html = '<div style="min-width:240px"><table>';
+      html += `<tr><th>Longitude</th><td>${lon.toFixed(8)}</td></tr>`;
+      html += `<tr><th>Latitude</th><td>${lat.toFixed(8)}</td></tr>`;
       Object.entries(row.original).forEach(([key, value]) => {
-        html += `<tr><th style="text-align:left; border:1px solid #ddd; padding:5px;">${key}</th><td style="border:1px solid #ddd; padding:5px;">${value ?? ''}</td></tr>`;
+        html += `<tr><th>${key}</th><td>${value ?? ''}</td></tr>`;
       });
       html += '</table></div>';
       return html;
     }
 
     function buildValidRows(rows, fields) {
-      if (!fields?.xField || !fields?.yField) {
-        throw new Error('Kolom X dan Y tidak terdeteksi. Pastikan file memiliki header X dan Y.');
-      }
-
+      if (!fields?.xField || !fields?.yField) throw new Error('X and Y fields were not detected.');
       const valid = [];
-      const coordMode = document.getElementById('coordMode').value;
-
       rows.forEach((row, idx) => {
         const x = parseDecimal(row[fields.xField]);
         const y = parseDecimal(row[fields.yField]);
         const z = fields.zField ? parseDecimal(row[fields.zField]) : null;
         const noVal = fields.noField ? row[fields.noField] : (idx + 1);
-
         if (x === null || y === null) return;
-
         let transformed;
-        try {
-          transformed = transformCoordinate(x, y);
-        } catch (err) {
-          return;
-        }
-
+        try { transformed = transformCoordinate(x, y); } catch (err) { return; }
         if (!transformed) return;
-        const lon = transformed.lon;
-        const lat = transformed.lat;
-
+        const { lon, lat } = transformed;
         if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
-        if (coordMode === 'lonlat') {
-          if (lon < -180 || lon > 180 || lat < -90 || lat > 90) return;
-        } else {
-          if (lon < -180 || lon > 180 || lat < -90 || lat > 90) return;
-        }
-
-        valid.push({
-          no: noVal,
-          x,
-          y,
-          z,
-          lon,
-          lat,
-          original: row
-        });
+        if (lon < -180 || lon > 180 || lat < -90 || lat > 90) return;
+        valid.push({ no: noVal, x, y, z, lon, lat, original: row });
       });
-
       return valid;
     }
 
     function renderPoints(validRows) {
       pointLayer.clearLayers();
-
-      if (!validRows.length) {
-        throw new Error('Tidak ada titik valid yang bisa ditampilkan. Periksa X, Y, dan parameter UTM.');
-      }
-
+      if (!validRows.length) throw new Error('No valid points are available for display.');
       const radius = Number(document.getElementById('markerRadius').value) || 6;
       const strokeWidth = Number(document.getElementById('strokeWidth').value) || 1;
       const opacity = Number(document.getElementById('opacity').value) || 0.85;
-      const colorMode = document.getElementById('colorMode').value;
-
       const zVals = validRows.map(r => r.z).filter(v => v !== null && Number.isFinite(v));
-      const zMin = zVals.length ? Math.min(...zVals) : null;
-      const zMax = zVals.length ? Math.max(...zVals) : null;
-
+      const zMin = zVals.length ? Math.min(...zVals) : 0;
+      const zMax = zVals.length ? Math.max(...zVals) : 1;
       const bounds = [];
-
       validRows.forEach((row, idx) => {
-        const color = colorMode === 'zvalue'
-          ? getColorByValue(row.z, zMin, zMax)
-          : '#0ea5e9';
-
+        const color = getColorFromZ(row.z, zMin, zMax);
         const marker = L.circleMarker([row.lat, row.lon], {
-          radius,
-          color: '#0f172a',
-          weight: strokeWidth,
-          fillColor: color,
-          fillOpacity: opacity
-        });
-
-        marker.bindPopup(`
-          <div>
-            <div style="font-weight:700; margin-bottom:8px;">Titik ${row.no ?? (idx + 1)}</div>
-            ${buildPopupTable(row, row.lon, row.lat)}
-          </div>
-        `);
-
+          radius, color: '#0f172a', weight: strokeWidth, fillColor: color, fillOpacity: opacity
+        }).bindPopup(`<div><div style="font-weight:700; margin-bottom:8px;">Point ${row.no ?? (idx + 1)}</div>${buildPopupTable(row, row.lon, row.lat)}</div>`);
         marker.addTo(pointLayer);
         bounds.push([row.lat, row.lon]);
       });
+      if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
+    }
 
-      if (bounds.length) {
-        map.fitBounds(bounds, { padding: [30, 30] });
+    function idwInterpolation(lon, lat, points, power = 2, maxDistance = Infinity) {
+      let numerator = 0;
+      let denominator = 0;
+      for (const p of points) {
+        if (p.z === null || !Number.isFinite(p.z)) continue;
+        const dx = lon - p.lon;
+        const dy = lat - p.lat;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d === 0) return p.z;
+        if (d > maxDistance) continue;
+        const w = 1 / Math.pow(d, power);
+        numerator += w * p.z;
+        denominator += w;
+      }
+      return denominator === 0 ? null : numerator / denominator;
+    }
+
+    function createGridFromPoints(points, rows = 45, cols = 45, power = 2) {
+      const lons = points.map(p => p.lon);
+      const lats = points.map(p => p.lat);
+      const minLon = Math.min(...lons);
+      const maxLon = Math.max(...lons);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const padLon = (maxLon - minLon) * 0.03 || 0.0003;
+      const padLat = (maxLat - minLat) * 0.03 || 0.0003;
+      const eMinLon = minLon - padLon;
+      const eMaxLon = maxLon + padLon;
+      const eMinLat = minLat - padLat;
+      const eMaxLat = maxLat + padLat;
+      const dx = (eMaxLon - eMinLon) / (cols - 1);
+      const dy = (eMaxLat - eMinLat) / (rows - 1);
+      const grid = [];
+      for (let r = 0; r < rows; r++) {
+        const row = [];
+        for (let c = 0; c < cols; c++) {
+          const lon = eMinLon + c * dx;
+          const lat = eMinLat + r * dy;
+          const z = idwInterpolation(lon, lat, points, power);
+          row.push({ lon, lat, z });
+        }
+        grid.push(row);
+      }
+      const flat = grid.flat().filter(g => g.z !== null && Number.isFinite(g.z));
+      const zMin = flat.length ? Math.min(...flat.map(g => g.z)) : null;
+      const zMax = flat.length ? Math.max(...flat.map(g => g.z)) : null;
+      return { grid, rows, cols, dx, dy, minLon: eMinLon, maxLon: eMaxLon, minLat: eMinLat, maxLat: eMaxLat, zMin, zMax, power };
+    }
+
+    function renderDTMGrid(gridData) {
+      dtmLayer.clearLayers();
+      if (!gridData) throw new Error('DTM is not available yet.');
+      const { grid, rows, cols, zMin, zMax } = gridData;
+      for (let r = 0; r < rows - 1; r++) {
+        for (let c = 0; c < cols - 1; c++) {
+          const p1 = grid[r][c];
+          const p2 = grid[r][c + 1];
+          const p3 = grid[r + 1][c + 1];
+          const p4 = grid[r + 1][c];
+          if ([p1, p2, p3, p4].some(p => p.z === null || !Number.isFinite(p.z))) continue;
+          const avgZ = (p1.z + p2.z + p3.z + p4.z) / 4;
+          const color = getColorFromZ(avgZ, zMin, zMax);
+          L.polygon([
+            [p1.lat, p1.lon], [p2.lat, p2.lon], [p3.lat, p3.lon], [p4.lat, p4.lon]
+          ], {
+            color, weight: 0, fillColor: color, fillOpacity: 0.45, interactive: false
+          }).addTo(dtmLayer);
+        }
       }
     }
 
-    function clearLayer() {
+    function interpolateEdge(level, pA, pB) {
+      if (pA.z === null || pB.z === null) return null;
+      const dz = pB.z - pA.z;
+      if (dz === 0) return null;
+      const t = (level - pA.z) / dz;
+      if (t < 0 || t > 1) return null;
+      return {
+        lon: pA.lon + t * (pB.lon - pA.lon),
+        lat: pA.lat + t * (pB.lat - pA.lat)
+      };
+    }
+
+    function buildContoursFromGrid(gridData, interval) {
+      if (!gridData) throw new Error('DTM is required before contour generation.');
+      const { grid, rows, cols, zMin, zMax } = gridData;
+      if (zMin === null || zMax === null) return [];
+      const contours = [];
+      const start = Math.ceil(zMin / interval) * interval;
+      const end = Math.floor(zMax / interval) * interval;
+      for (let level = start; level <= end + 1e-12; level += interval) {
+        for (let r = 0; r < rows - 1; r++) {
+          for (let c = 0; c < cols - 1; c++) {
+            const bl = grid[r][c];
+            const br = grid[r][c + 1];
+            const tr = grid[r + 1][c + 1];
+            const tl = grid[r + 1][c];
+            const vals = [bl.z, br.z, tr.z, tl.z];
+            if (vals.some(v => v === null || !Number.isFinite(v))) continue;
+            const minCell = Math.min(...vals);
+            const maxCell = Math.max(...vals);
+            if (!(level >= minCell && level <= maxCell)) continue;
+            const intersections = [];
+            const e1 = interpolateEdge(level, bl, br);
+            const e2 = interpolateEdge(level, br, tr);
+            const e3 = interpolateEdge(level, tr, tl);
+            const e4 = interpolateEdge(level, tl, bl);
+            if (e1) intersections.push(e1);
+            if (e2) intersections.push(e2);
+            if (e3) intersections.push(e3);
+            if (e4) intersections.push(e4);
+            if (intersections.length >= 2) {
+              for (let i = 0; i < intersections.length - 1; i += 2) {
+                contours.push({
+                  level,
+                  coords: [
+                    [intersections[i].lat, intersections[i].lon],
+                    [intersections[i + 1].lat, intersections[i + 1].lon]
+                  ]
+                });
+              }
+            }
+          }
+        }
+      }
+      return contours;
+    }
+
+    function renderContours(contours) {
+      contourLayer.clearLayers();
+      if (!contours.length) throw new Error('No contours were generated. Try a smaller interval or a denser grid.');
+      contours.forEach((contour, idx) => {
+        const line = L.polyline(contour.coords, {
+          color: '#111827',
+          weight: Number.isInteger(contour.level) ? 1.5 : 1,
+          opacity: 0.85
+        }).bindPopup(`Contour Z = ${contour.level.toFixed(3)}`);
+        line.addTo(contourLayer);
+        if (idx % 40 === 0) {
+          const mid = contour.coords[0];
+          L.marker(mid, {
+            interactive: false,
+            icon: L.divIcon({
+              className: 'contour-label',
+              html: `<div style="font-size:10px; color:#111827; background:rgba(255,255,255,0.75); padding:1px 4px; border-radius:4px; border:1px solid #ddd;">${contour.level.toFixed(3)}</div>`
+            })
+          }).addTo(contourLayer);
+        }
+      });
+    }
+
+    function buildDTM() {
+      if (!plottedRows.length) throw new Error('Display valid points first.');
+      const rows = Number(document.getElementById('gridRows').value) || 45;
+      const cols = Number(document.getElementById('gridCols').value) || 45;
+      const power = Number(document.getElementById('idwPower').value) || 2;
+      dtmGridData = createGridFromPoints(plottedRows, rows, cols, power);
+      renderDTMGrid(dtmGridData);
+      setStatus(`DTM created successfully.\nGrid: ${rows} x ${cols}\nIDW power: ${power}`, 'ok');
+    }
+
+    function buildContour() {
+      if (!dtmGridData) throw new Error('Build the DTM first.');
+      const interval = Number(document.getElementById('contourInterval').value) || 0.01;
+      const contours = buildContoursFromGrid(dtmGridData, interval);
+      renderContours(contours);
+      setStatus(`Initial contours created successfully.\nSegments: ${contours.length}\nInterval: ${interval}`, 'ok');
+    }
+
+    function resetHoverMarker() {
+      hoverLayer.clearLayers();
+    }
+
+    function showHoverMarkerOnMap(sample) {
+      if (!sample || !Number.isFinite(sample.lat) || !Number.isFinite(sample.lon)) return;
+      hoverLayer.clearLayers();
+      L.circleMarker([sample.lat, sample.lon], {
+        radius: 9,
+        color: '#2563eb',
+        weight: 2,
+        fillColor: '#60a5fa',
+        fillOpacity: 0.25
+      }).bindPopup(`Profile point<br>Distance: ${sample.distance_m.toFixed(2)} m<br>Z: ${sample.z !== null ? sample.z.toFixed(3) : '-'}`).addTo(hoverLayer);
+    }
+
+    function resetMeasurementSummary() {
+      measureModeText.textContent = 'None';
+      measureDistanceText.textContent = '-';
+      measureAreaText.textContent = '-';
+      measurePerimeterText.textContent = '-';
+    }
+
+    function formatDistance(meters) {
+      return meters >= 1000 ? `${(meters / 1000).toFixed(3)} km` : `${meters.toFixed(2)} m`;
+    }
+
+    function formatArea(squareMeters) {
+      return squareMeters >= 1000000 ? `${(squareMeters / 1000000).toFixed(6)} km²` : `${squareMeters.toFixed(2)} m²`;
+    }
+
+    function updateMeasurementSummaryFromPolyline(latlngs) {
+      const coords = latlngs.map(ll => [ll.lng, ll.lat]);
+      const line = turf.lineString(coords);
+      const distanceMeters = turf.length(line, { units: 'kilometers' }) * 1000;
+      measureModeText.textContent = 'Distance';
+      measureDistanceText.textContent = formatDistance(distanceMeters);
+      measureAreaText.textContent = '-';
+      measurePerimeterText.textContent = '-';
+    }
+
+    function updateMeasurementSummaryFromPolygon(latlngs) {
+      const ring = latlngs[0].map(ll => [ll.lng, ll.lat]);
+      if (ring.length < 3) return;
+      const closedRing = [...ring, ring[0]];
+      const polygon = turf.polygon([closedRing]);
+      const areaSqm = turf.area(polygon);
+      const perimeterMeters = turf.length(turf.lineString(closedRing), { units: 'kilometers' }) * 1000;
+      measureModeText.textContent = 'Area';
+      measureDistanceText.textContent = '-';
+      measureAreaText.textContent = formatArea(areaSqm);
+      measurePerimeterText.textContent = formatDistance(perimeterMeters);
+    }
+
+    function clearAllLayers() {
       pointLayer.clearLayers();
+      dtmLayer.clearLayers();
+      contourLayer.clearLayers();
+      profileLineLayer.clearLayers();
+      profileSampleLayer.clearLayers();
+      hoverLayer.clearLayers();
+      measurementLayer.clearLayers();
+      drawnItems.clearLayers();
       plottedRows = [];
+      dtmGridData = null;
+      latestProfileData = [];
+      latestProfileFileName = 'profile_export.csv';
+      activeToolMode = 'none';
+      profilePanel.style.display = 'none';
+      resetMeasurementSummary();
       updateStats(rawRows, [], detectedFields);
-      setStatus('Layer titik dihapus dari peta.');
+      setStatus('All analysis layers were cleared.');
+    }
+
+    function activateProfileMode() {
+      if (!plottedRows.length) throw new Error('Display valid points first.');
+      activeToolMode = 'profile';
+      setStatus('Profile mode is active. Draw a line on the map with sequential clicks, then double-click to finish.', 'ok');
+      new L.Draw.Polyline(map, {
+        shapeOptions: { color: '#7c3aed', weight: 3 }
+      }).enable();
+    }
+
+    function activateMeasureMode() {
+      activeToolMode = 'measure';
+      setStatus('Measurement mode is active. Draw a polyline for distance or a polygon for area. Use the measurement summary panel to review the result.', 'ok');
+      const choice = window.prompt('Type "line" for distance or "polygon" for area:', 'line');
+      if (!choice) return;
+      const value = choice.trim().toLowerCase();
+      if (value === 'polygon') {
+        new L.Draw.Polygon(map, {
+          shapeOptions: { color: '#dc2626', weight: 2, fillOpacity: 0.1 }
+        }).enable();
+      } else {
+        new L.Draw.Polyline(map, {
+          shapeOptions: { color: '#dc2626', weight: 3 }
+        }).enable();
+      }
+    }
+
+    function interpolateAlongLine(latlngs, sampleCount = 120) {
+      const coords = latlngs.map(ll => [ll.lng, ll.lat]);
+      const line = turf.lineString(coords);
+      const totalLength = turf.length(line, { units: 'kilometers' });
+      const samples = [];
+      for (let i = 0; i <= sampleCount; i++) {
+        const dist = (i / sampleCount) * totalLength;
+        const pt = turf.along(line, dist, { units: 'kilometers' });
+        const [lon, lat] = pt.geometry.coordinates;
+        samples.push({ lon, lat, distanceKm: dist });
+      }
+      return samples;
+    }
+
+    function buildProfileCsvContent(profile) {
+      const headers = ['index', 'distance_m', 'longitude', 'latitude', 'z'];
+      const lines = [headers.join(',')];
+      profile.forEach((p, idx) => {
+        lines.push([
+          idx + 1,
+          p.distance_m,
+          p.lon,
+          p.lat,
+          p.z ?? ''
+        ].join(','));
+      });
+      return lines.join('\n');
+    }
+
+    function exportProfileToCsv() {
+      if (!latestProfileData.length) {
+        setStatus('No profile data is available for CSV export.', 'err');
+        return;
+      }
+      const csv = buildProfileCsvContent(latestProfileData);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = latestProfileFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus(`Profile CSV exported successfully: ${latestProfileFileName}`, 'ok');
+    }
+
+    function generateProfileFromLine(latlngs) {
+      if (!plottedRows.length) throw new Error('Input points are not available.');
+      profileLineLayer.clearLayers();
+      profileSampleLayer.clearLayers();
+      hoverLayer.clearLayers();
+      const line = L.polyline(latlngs, { color: '#7c3aed', weight: 3 }).addTo(profileLineLayer);
+      const samples = interpolateAlongLine(latlngs, Number(document.getElementById('profileSamples').value) || 120);
+      const power = Number(document.getElementById('idwPower').value) || 2;
+
+      latestProfileData = samples.map((s, idx) => {
+        const z = idwInterpolation(s.lon, s.lat, plottedRows, power);
+        if (idx % 8 === 0) {
+          L.circleMarker([s.lat, s.lon], {
+            radius: 3,
+            color: '#111827',
+            weight: 1,
+            fillColor: '#ffffff',
+            fillOpacity: 1
+          }).bindPopup(`Distance: ${(s.distanceKm * 1000).toFixed(2)} m<br>Z: ${z !== null ? z.toFixed(3) : '-'}`).addTo(profileSampleLayer);
+        }
+        return {
+          index: idx + 1,
+          distance_m: s.distanceKm * 1000,
+          lon: s.lon,
+          lat: s.lat,
+          z
+        };
+      });
+
+      latestProfileFileName = `profile_${Date.now()}.csv`;
+      if (latlngs.length) map.fitBounds(line.getBounds(), { padding: [30, 30] });
+      showProfileChart(latestProfileData);
+      setStatus(`Profile created successfully.\nSamples: ${latestProfileData.length}\nHover on the chart to identify the matching location on the map.`, 'ok');
+    }
+
+    function showProfileChart(profile) {
+      profilePanel.style.display = 'block';
+      const x = profile.map(p => p.distance_m);
+      const y = profile.map(p => p.z);
+      const customdata = profile.map(p => [p.index, p.lon, p.lat]);
+
+      Plotly.newPlot('profileChart', [{
+        x,
+        y,
+        customdata,
+        type: 'scatter',
+        mode: 'lines+markers',
+        line: { color: '#2563eb', width: 2 },
+        marker: { size: 5 },
+        hovertemplate: 'Point %{customdata[0]}<br>Distance: %{x:.2f} m<br>Z: %{y:.3f}<br>Lon: %{customdata[1]:.8f}<br>Lat: %{customdata[2]:.8f}<extra></extra>'
+      }], {
+        title: 'Elevation / Bathymetry Profile',
+        margin: { l: 52, r: 20, t: 40, b: 42 },
+        xaxis: { title: 'Distance (m)' },
+        yaxis: { title: 'Z' },
+        paper_bgcolor: '#ffffff',
+        plot_bgcolor: '#ffffff'
+      }, { responsive: true, displayModeBar: false });
+
+      profileChartEl.on('plotly_hover', (eventData) => {
+        const pointIndex = eventData?.points?.[0]?.pointIndex;
+        if (pointIndex === undefined || !latestProfileData[pointIndex]) return;
+        const sample = latestProfileData[pointIndex];
+        showHoverMarkerOnMap(sample);
+      });
+
+      profileChartEl.on('plotly_unhover', () => {
+        resetHoverMarker();
+      });
+
+      profileChartEl.on('plotly_click', (eventData) => {
+        const pointIndex = eventData?.points?.[0]?.pointIndex;
+        if (pointIndex === undefined || !latestProfileData[pointIndex]) return;
+        const sample = latestProfileData[pointIndex];
+        showHoverMarkerOnMap(sample);
+        map.panTo([sample.lat, sample.lon]);
+      });
     }
 
     coordModeEl.addEventListener('change', () => {
@@ -690,67 +1024,95 @@
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
       try {
-        setStatus('Membaca file...');
+        setStatus('Reading file...');
         rawRows = await parseFile(file);
-        if (!rawRows.length) {
-          throw new Error('File berhasil dibaca, tetapi tidak ada data baris.');
-        }
-
+        if (!rawRows.length) throw new Error('The file was read, but no data rows were found.');
         detectedFields = detectFields(rawRows);
         updatePreview(rawRows);
         updateStats(rawRows, [], detectedFields);
-
-        const fieldMsg = detectedFields
-          ? `Deteksi kolom: ${[detectedFields.noField, detectedFields.xField, detectedFields.yField, detectedFields.zField].filter(Boolean).join(', ') || '-'}`
-          : 'Kolom belum terdeteksi.';
-
-        setStatus(`File ${file.name} berhasil dibaca.\n${fieldMsg}\nKlik "Tampilkan di Peta" untuk memproses koordinat.`, 'ok');
+        setStatus(`File ${file.name} was read successfully.\nDetected fields: ${[detectedFields?.noField, detectedFields?.xField, detectedFields?.yField, detectedFields?.zField].filter(Boolean).join(', ') || '-'}\nClick "Display Points" to process the coordinates.`, 'ok');
       } catch (err) {
         console.error(err);
         rawRows = [];
         detectedFields = null;
         updatePreview([]);
         updateStats([], [], null);
-        setStatus(`Gagal membaca file: ${err.message}`, 'err');
+        setStatus(`Failed to read file: ${err.message}`, 'err');
       }
     });
 
-    btnRender.addEventListener('click', () => {
+    btnRenderPoints.addEventListener('click', () => {
       try {
-        if (!rawRows.length) {
-          throw new Error('Belum ada file yang diunggah.');
-        }
-        if (!detectedFields) {
-          throw new Error('Kolom data belum terdeteksi.');
-        }
-
+        if (!rawRows.length) throw new Error('No file has been uploaded yet.');
         plottedRows = buildValidRows(rawRows, detectedFields);
         renderPoints(plottedRows);
         updateStats(rawRows, plottedRows, detectedFields);
-
-        const coordMode = document.getElementById('coordMode').value;
-        let extra = '';
-        if (coordMode === 'utm') {
-          const zone = document.getElementById('utmZone').value;
-          const hemi = document.getElementById('utmHemisphere').value;
-          extra = `\nTransformasi: UTM Zone ${zone} ${hemi}`;
-        } else {
-          extra = '\nTransformasi: menggunakan longitude/latitude langsung';
-        }
-
-        setStatus(`Berhasil menampilkan ${plottedRows.length} titik di peta.${extra}`, 'ok');
+        setStatus(`Successfully displayed ${plottedRows.length} valid points on the map.`, 'ok');
       } catch (err) {
         console.error(err);
         pointLayer.clearLayers();
         plottedRows = [];
         updateStats(rawRows, plottedRows, detectedFields);
-        setStatus(`Gagal menampilkan data: ${err.message}`, 'err');
+        setStatus(`Failed to display points: ${err.message}`, 'err');
       }
     });
 
-    btnClear.addEventListener('click', clearLayer);
+    btnBuildDTM.addEventListener('click', () => {
+      try { buildDTM(); }
+      catch (err) { console.error(err); setStatus(`Failed to build DTM: ${err.message}`, 'err'); }
+    });
+
+    btnBuildContour.addEventListener('click', () => {
+      try { buildContour(); }
+      catch (err) { console.error(err); setStatus(`Failed to build contours: ${err.message}`, 'err'); }
+    });
+
+    btnProfileMode.addEventListener('click', () => {
+      try { activateProfileMode(); }
+      catch (err) { console.error(err); setStatus(`Failed to activate profile mode: ${err.message}`, 'err'); }
+    });
+
+    btnMeasureMode.addEventListener('click', () => {
+      try { activateMeasureMode(); }
+      catch (err) { console.error(err); setStatus(`Failed to activate measurement mode: ${err.message}`, 'err'); }
+    });
+
+    btnClearAll.addEventListener('click', clearAllLayers);
+    btnCloseProfile.addEventListener('click', () => {
+      profilePanel.style.display = 'none';
+      resetHoverMarker();
+    });
+    btnExportProfileCsv.addEventListener('click', exportProfileToCsv);
+
+    map.on(L.Draw.Event.CREATED, function (e) {
+      drawnItems.clearLayers();
+      const layer = e.layer;
+      drawnItems.addLayer(layer);
+
+      try {
+        if (activeToolMode === 'profile' && e.layerType === 'polyline') {
+          generateProfileFromLine(layer.getLatLngs());
+          activeToolMode = 'none';
+          return;
+        }
+
+        measurementLayer.clearLayers();
+        measurementLayer.addLayer(layer);
+
+        if (e.layerType === 'polyline') {
+          updateMeasurementSummaryFromPolyline(layer.getLatLngs());
+          setStatus('Distance measurement created successfully.', 'ok');
+        } else if (e.layerType === 'polygon') {
+          updateMeasurementSummaryFromPolygon(layer.getLatLngs());
+          setStatus('Area measurement created successfully.', 'ok');
+        }
+        activeToolMode = 'none';
+      } catch (err) {
+        console.error(err);
+        setStatus(`Failed to process drawing: ${err.message}`, 'err');
+      }
+    });
   </script>
 </body>
 </html>
